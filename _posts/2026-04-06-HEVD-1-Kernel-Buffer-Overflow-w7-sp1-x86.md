@@ -6,7 +6,7 @@ tags: [Windows]
 
 ---
 
-### Introduction
+# Introduction
 
 This post is part of an idea I have been wanting to explore for a while: building the kind of HEVD material I wish I had when I started with Windows kernel exploitation.
 
@@ -16,7 +16,7 @@ The target reader is someone who already knows how to reverse, debug, and write 
 
 In this first post we will exploit a classic kernel-mode stack buffer overflow on Windows 7 SP1 x86. This target is intentionally friendly, and that is a feature, not a bug. It lets us focus on the fundamentals before modern mitigations start punching us in the face.
 
-### Reverse Engineering the Driver Entrypoint
+# Reverse Engineering the Driver Entrypoint
 I am going to start from the point where the environment is already ready: Windows 7 SP1 x86 VM, kernel debugging configured, symbols working, and HEVD loaded. I will not cover that setup here because other people have already done it well. If you need a walkthrough for that part, Connor McGarr's post [Exploit Development: Windows Kernel Exploitation - Debugging Environment and Stack Overflow](https://connormcgarr.github.io/Kernel-Exploitation-1/) has a dedicated debugging environment setup section and is a great place to bootstrap the lab.
 
 So from here on, I assume the driver is loaded and we can spend our time on the interesting bit: understanding how user mode reaches HEVD, how the driver routes requests internally, and how that eventually turns into a kernel stack overflow we can exploit.
@@ -203,7 +203,7 @@ That is all we really need from `DriverEntry` for now. It does a few additional 
 3. It registers the dispatch routines in `MajorFunction`.
 4. It creates the symbolic link that lets user-mode code reach the driver.
 
-### Reverse Engineering the IOCTL Handler
+# Reverse Engineering the IOCTL Handler
 
 Now we can focus on `IrpDeviceIoCtlHandler`, the routine stored in `MajorFunction[IRP_MJ_DEVICE_CONTROL]`. Every time a user-mode program calls `DeviceIoControl` on the HEVD handle, execution will eventually reach this handler. Its job is simple: inspect the request, recover the parameters associated with that request, and dispatch execution to the appropriate internal routine.
 
@@ -270,7 +270,7 @@ This detail matters because the `IoControlCode` is the selector we control from 
 
 At this point the handler is no longer mysterious. It is effectively a router: user mode sends an IOCTL, the driver reads the control code from the current stack location, and the `switch` sends execution to the corresponding handler.
 
-### Triggering the Buffer Overflow Path
+# Triggering the Buffer Overflow Path
 
 For this first post we are going after the classic "Hello World" of Windows kernel exploitation: HEVD's stack-based buffer overflow on Windows 7 SP1 x86. The branch we care about is `HEVD!BufferOverflowStackIoctlHandler`, so the first practical question is: which IOCTL reaches it?
 
@@ -370,7 +370,7 @@ The full runtime path looks like this:
       [ memcpy(KernelBuffer, UserBuffer, Size) ]
 ```
 
-### Exploiting the vulnerability
+# Exploiting the vulnerability
 
 I will write the exploit in C. Some people prefer Python for quick HEVD PoCs, and that is perfectly fine, but for kernel work I prefer staying close to the native Windows APIs from the beginning. That is mostly personal preference, not dogma.
 
@@ -969,7 +969,7 @@ The main things that would ruin our day are:
 
 So the takeaway is not "kernel exploitation is always this easy." It is the opposite: this is the clean version we use to learn the mechanics. In later targets, the same initial bug class may still give us corruption, but turning that corruption into reliable privilege escalation usually requires a different plan: kernel ROP, information leaks, mitigation bypasses, or a payload strategy that never depends on executing user-mode shellcode from ring 0.
 
-### References and Further Reading
+## References and Further Reading
 
 Before closing this part, I want to leave a few resources that are genuinely useful if you want to go deeper.
 
