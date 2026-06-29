@@ -2749,6 +2749,7 @@ Some good resources to delve deeper into the topics covered in this post:
 - [Exploiting Reversing (ER) series: article 07](https://exploitreversing.com/2026/03/04/exploiting-reversing-er-series-article-07/)
 - [Exploiting Reversing (ER) series: article 08](https://exploitreversing.com/2026/03/31/exploiting-reversing-er-series-article-08/)
 - [Exploiting Reversing (ER) series: article 09](https://exploitreversing.com/2026/04/28/exploiting-reversing-er-series-article-09/)
+
 ---
 
 *That's all for now. Hope you found this useful! And remember,*
