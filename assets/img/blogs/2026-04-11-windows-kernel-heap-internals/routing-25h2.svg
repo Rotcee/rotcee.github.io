@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1180" height="560" viewBox="0 0 1180 560">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f3a4a"/>
+    </marker>
+    <style>
+      .bg { fill: #1e1e1e; }
+      .box { fill: #ffffff; stroke: #2f3a4a; stroke-width: 2; rx: 8; }
+      .backend { fill: #eef5f1; stroke: #2f3a4a; stroke-width: 2; rx: 8; }
+      .text { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; fill: #17202a; font-size: 22px; }
+      .small { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; fill: #17202a; font-size: 17px; }
+      .label { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; fill: #39475a; font-size: 16px; }
+      .line { stroke: #2f3a4a; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="1180" height="560"/>
+
+  <rect class="box" x="420" y="35" width="340" height="62"/>
+  <text class="text" x="474" y="74">Pool request</text>
+
+  <line class="line" x1="590" y1="97" x2="590" y2="135"/>
+  <rect class="box" x="365" y="135" width="450" height="72"/>
+  <text class="text" x="406" y="165">Pool heap / policy path</text>
+  <text class="small" x="407" y="190">paged, nonpaged, quota, flags...</text>
+
+  <line class="line" x1="590" y1="207" x2="590" y2="250"/>
+  <rect class="box" x="380" y="250" width="420" height="74"/>
+  <text class="text" x="451" y="280">Size routing</text>
+  <text class="small" x="442" y="305">inside the selected heap</text>
+
+  <line class="line" x1="380" y1="287" x2="250" y2="375"/>
+  <rect class="backend" x="40" y="382" width="330" height="92"/>
+  <text class="text" x="154" y="416">LFH</text>
+  <text class="small" x="68" y="443">size &lt; 0x200</text>
+  <text class="small" x="68" y="465">and bucket active</text>
+
+  <line class="line" x1="520" y1="324" x2="520" y2="375"/>
+  <rect class="backend" x="385" y="382" width="270" height="92"/>
+  <text class="text" x="494" y="416">VS</text>
+  <text class="small" x="414" y="443">inactive LFH bucket</text>
+  <text class="small" x="414" y="465">or 0x200..0x7F000</text>
+
+  <line class="line" x1="800" y1="286" x2="845" y2="375"/>
+  <rect class="backend" x="710" y="382" width="255" height="92"/>
+  <text class="text" x="747" y="416">Segment</text>
+  <text class="small" x="733" y="443">0x7F000 &lt; size</text>
+  <text class="small" x="733" y="465">&lt;= 0x7F0000</text>
+
+  <line class="line" x1="800" y1="270" x2="1015" y2="375"/>
+  <rect class="backend" x="990" y="382" width="150" height="92"/>
+  <text class="text" x="1028" y="416">Large</text>
+  <text class="small" x="1014" y="443">size</text>
+  <text class="small" x="1014" y="465">&gt; 0x7F0000</text>
+
+  <text class="label" x="56" y="520">0x200 is included in VS, not LFH.</text>
+</svg>

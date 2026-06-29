@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="980" height="420" viewBox="0 0 980 420">
+  <defs>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="8" markerHeight="8" orient="auto-start-reverse">
+      <path d="M 0 0 L 10 5 L 0 10 z" fill="#2f3a4a"/>
+    </marker>
+    <style>
+      .bg { fill: #1e1e1e; }
+      .box { fill: #ffffff; stroke: #2f3a4a; stroke-width: 2; rx: 8; }
+      .result { fill: #eef5f1; stroke: #2f3a4a; stroke-width: 2; rx: 8; }
+      .text { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; fill: #17202a; font-size: 22px; }
+      .small { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; fill: #17202a; font-size: 17px; }
+      .label { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; fill: #39475a; font-size: 16px; }
+      .line { stroke: #2f3a4a; stroke-width: 2; fill: none; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect class="bg" width="980" height="420"/>
+
+  <rect class="box" x="350" y="35" width="280" height="62"/>
+  <text class="text" x="398" y="74">Allocation size</text>
+
+  <line class="line" x1="490" y1="97" x2="490" y2="130"/>
+  <rect class="box" x="330" y="130" width="320" height="72"/>
+  <text class="text" x="378" y="160">size &lt; 0x200?</text>
+  <text class="small" x="382" y="184">0x200 itself is VS</text>
+
+  <line class="line" x1="330" y1="165" x2="190" y2="245"/>
+  <text class="label" x="230" y="205">no</text>
+  <rect class="result" x="70" y="252" width="250" height="86"/>
+  <text class="text" x="168" y="286">VS</text>
+  <text class="small" x="94" y="313">if below VS limit</text>
+
+  <line class="line" x1="650" y1="165" x2="760" y2="245"/>
+  <text class="label" x="690" y="230">yes</text>
+  <rect class="box" x="650" y="252" width="250" height="86"/>
+  <text class="text" x="680" y="286">bucket active?</text>
+  <text class="small" x="682" y="313">17th active alloc</text>
+
+  <line class="line" x1="710" y1="338" x2="610" y2="365"/>
+  <text class="label" x="640" y="380">yes</text>
+  <rect class="result" x="450" y="350" width="140" height="50"/>
+  <text class="text" x="493" y="383">LFH</text>
+
+  <line class="line" x1="840" y1="338" x2="860" y2="365"/>
+  <text class="label" x="920" y="340">no</text>
+  <rect class="result" x="835" y="350" width="110" height="50"/>
+  <text class="text" x="864" y="383">VS</text>
+</svg>

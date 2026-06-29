@@ -207,13 +207,15 @@ The first stage still belongs to the pool contract. Paged versus nonpaged memory
 
 Only once that classification is done does the routing question become the one that most reversing material cares about:
 
-![alt text](/assets/img/blogs/2026-04-11-windows-kernel-heap-internals/image-2.png)
+![kernel pool routing model](/assets/img/blogs/2026-04-11-windows-kernel-heap-internals/routing-25h2.svg)
 
-Using the pool-visible sizes shown in the diagram, the first important range is the one up to `16,368` bytes. This is the part of the allocator that can benefit from `LFH`, but **small still does not automatically mean LFH**. A request in that range only goes through `LFH` if its size belongs to one of the common bucket sizes and the corresponding bucket is active. If the bucket is inactive, the request falls back to `VS`, exactly as the diagram shows.
+The first important boundary is `0x200` bytes. On the build described here, `LFH` only covers the sub-`0x200` size space. A request at `0x200` or above is not an `LFH` candidate; while it remains inside the first segment-managed range, it goes to `VS`.
 
-The `LFH` bucket for a given size becomes active on the `17th` active allocation for that specific bucket, and that same allocation already falls into `LFH`. Before that point, even a size that conceptually belongs to the `LFH` world still goes through `VS` in that concrete heap instance.
+Even below `0x200`, **small still does not automatically mean LFH**. A request in that range only goes through `LFH` if its size belongs to one of the LFH bucket sizes and the corresponding bucket is active. If the bucket is inactive, the request falls back to `VS`.
 
-This is why `VS` matters so much. In the diagram, it is not only the fallback for `<= 16,368` bytes when the `LFH` bucket is inactive. It is also the direct path for the rest of the managed requests up to `0x7F000` bytes, roughly `508 KB`, within `SegContexts[0]`. `VS` is therefore not just a side path beside `LFH`; it is the flexible backend that catches both non-`LFH` small traffic and the larger requests that still belong to the first segment context.
+The `LFH` bucket for a given sub-`0x200` size becomes active on the `17th` active allocation for that specific bucket, and that same allocation already falls into `LFH`. Before that point, even an LFH-capable size still goes through `VS` in that concrete heap instance.
+
+This is why `VS` matters so much. It is the fallback for LFH-capable sizes whose bucket is inactive, and it is also the direct path for requests from `0x200` up to `0x7F000` bytes, roughly `508 KB`, within `SegContexts[0]`. `VS` is therefore not just a side path beside `LFH`; it is the flexible backend that catches both non-`LFH` small traffic and the larger requests that still belong to the first segment context.
 
 Beyond that range, the allocator moves into direct segment allocation. In the routing shown in the diagram, requests larger than `0x7F000` and up to `0x7F0000`, roughly `8 MB`, are handled through `Segment Allocation` in `SegContexts[1]`. Once the request grows beyond `0x7F0000`, it leaves that managed segment-backed path and enters the `Large Allocation` branch.
 
@@ -572,17 +574,13 @@ This process replaces the older habit of inferring layout from the local page al
 
 `LFH`, the Low Fragmentation Heap, is the bucketized backend for small sizes that the allocator sees often enough to regularize. It does not treat each request as an independent variable-size chunk. It groups requests by bucket and serves them from subsegments where every block has the same size.
 
-The important thing to keep in view is that LFH is not "the backend for all small allocations." It is the backend for specific bucket bands:
+The important thing to keep in view is that LFH is not "the backend for all small allocations." On this build, the LFH-capable space is the sub-`0x200` band:
 
-| Buckets | Allocation size | Granularity |
-| --- | --- | --- |
-| `1-64` | `1 B - 1008 B` | `16 B` |
-| `65-80` | `1009 B - 2032 B` | `64 B` |
-| `81-96` | `2033 B - 4080 B` | `128 B` |
-| `97-112` | `4081 B - 8176 B` | `256 B` |
-| `113-128` | `8177 B - 16,368 B` | `512 B` |
+| Allocation size | Granularity |
+| --- | --- |
+| `< 0x200` bytes | `16 B` |
 
-Remember: LFH lives in the first segment context. Requests beyond `16,368` bytes are outside LFH's bucketized space. Requests inside that space still go to `VS` until the corresponding bucket is active.
+Remember: LFH lives in the first segment context, but it does not cover that whole context. Requests of `0x200` bytes and above are outside LFH's bucketized space and fall into `VS` while they remain in the first segment-managed range. Requests below `0x200` still go to `VS` until the corresponding bucket is active.
 
 The useful structures here are the heap-wide LFH context, the bucket, the embedded bucket owner, and the LFH subsegment:
 
@@ -969,15 +967,17 @@ LFH regularizes allocation traffic by moving geometry upward into buckets and su
 
 ### When A Common Size Still Lands In VS
 
-Falling inside an LFH bucket band does not mean the allocation is already using LFH. It only means that the size is eligible for LFH.
+Falling below `0x200` bytes does not mean the allocation is already using LFH. It only means that the size is eligible for LFH.
 
-LFH is demand-activated. Until the corresponding bucket is active in the heap instance serving the request, the same size is still handled by `VS`.
+LFH is demand-activated. Until the corresponding bucket is active in the heap instance serving the request, the same sub-`0x200` size is still handled by `VS`.
 
 The bucket is not active at `16` active allocations. The `17th` active allocation is the one that activates the bucket, and that same allocation is already served by `LFH`. Before that point, a fully LFH-capable size class still lands in `VS` in that concrete heap instance.
 
+At `0x200` bytes and above, the reason is simpler: the request is no longer LFH-capable in this model. If it is still below the `VS` upper bound, it goes to `VS` directly rather than waiting for any LFH bucket state.
+
 The decision is:
 
-![alt text](/assets/img/blogs/2026-04-11-windows-kernel-heap-internals/mermaid-diagram%20%2812%29.png)
+![LFH versus VS decision](/assets/img/blogs/2026-04-11-windows-kernel-heap-internals/lfh-vs-decision-25h2.svg)
 
 A size class is therefore not "an LFH size" in the abstract. It only becomes LFH-backed once the relevant bucket is active in the specific heap instance that is serving the request. Activation is local to that heap instance, not a universal property of that size everywhere in the system.
 
