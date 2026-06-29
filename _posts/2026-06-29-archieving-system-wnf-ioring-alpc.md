@@ -2640,7 +2640,7 @@ CommonCleanup
 ```
 
 
-Final code here: [mirepodegithubtodavianoestacreado](mirepodegithubtodavianoestacreado)
+You can find the final code [in my GitHub](https://github.com/Rotcee/MyExploits/tree/main/HEVD/w11-25h2-pagedpool-overflow).
 
 In the final exploit code you can choose the EoP type with the `--eop` parameter, `spoofing` or `stealing`. It also distinguishes between two allocation versions with `--alloc`, `small` or `large`. The small one is the normal HEVD path, which makes allocations of size 504, while the large one is for a modified HEVD that allocates `0x1000` bytes. You will have to modify and compile HEVD to use that option. Therefore, in the final exploit `IO_RING_plus_ALPC_exploit.cpp`, you must choose one allocation option as well as one EoP option.
 
