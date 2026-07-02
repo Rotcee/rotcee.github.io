@@ -5,7 +5,7 @@ categories: [Windows Internals]
 tags: [Windows]
 ---
 
-# Introduction
+## Introduction
 
 In the previous post, I started my path into Windows kernel exploitation. The next step I wanted to tackle was the dynamic allocator.
 
@@ -35,7 +35,7 @@ Finally, this post is also intentionally limited in scope. I am not trying to ca
 
 That said, let's dive into this wonderful piece of the Windows kernel!
 
-# Part I — Laying the groundwork
+## Part I — Laying the groundwork
 
 ### Pool Types And The Basic Contract Of Kernel Dynamic Memory
 
@@ -120,7 +120,7 @@ The most visible change is the move from `POOL_TYPE` to `POOL_FLAGS`. In the old
 
 That last point is worth making explicit before moving on. The API does **not** let the caller choose the backend (which we will be explaining soon).The caller asks for a kind of memory. The allocator decides how to satisfy that request.
 
-# Part II — Classics never die
+## Part II — Classics never die
 
 ### The Legacy Pool Model And Why It Was So Readable
 
@@ -175,7 +175,7 @@ The effects show up in several directions at once. Small allocations are no long
 
 The classical model still matters, because it explains the language that survived into modern Windows and because many visible fields still descend from that older world. But from this point on, a nearby header is no longer the whole model, and a pool page is no longer the whole arena that matters.
 
-# Part III — The Heap-Backed Architecture
+## Part III — The Heap-Backed Architecture
 
 ### A Bird's-Eye View Of The Heap-Backed Pool
 
@@ -568,7 +568,7 @@ That does not yet say whether the range belongs to `LFH`, `VS`, or another segme
 
 This process replaces the older habit of inferring layout from the local page alone. A modern segment-managed allocation can cross page boundaries, and neighboring pages do not by themselves tell where the owning range begins or how large it is. The descriptor array does. Large allocations are the other branch: if the bitmap classifies the address into the large-allocation path, the correct model is no longer segment-descriptor parsing, but the large-allocation metadata owned by the heap itself.
 
-# Part IV — Backend Ownership Paths
+## Part IV — Backend Ownership Paths
 
 ### LFH In The Modern Kernel Pool
 
@@ -1175,7 +1175,7 @@ The mechanism is dynamic in the literal sense. The 25H2 layout already shows tha
 
 The practical consequence is simple: a free does not always mean immediate backend visibility. For some sizes, short-term reuse is decided by Dynamic Lookaside first, and only later by the ordinary `LFH`, `VS`, or segment-managed free path.
 
-# Part V — Security Boundaries And Reading Strategy
+## Part V — Security Boundaries And Reading Strategy
 
 ### Hardening Patterns In The Modern Design
 
@@ -1283,7 +1283,7 @@ For practical analysis, the highest-value questions are usually these:
 
 The main lesson of the modern pool is not that it became impossible to read. It is that it became impossible to read **locally first**.
 
-# Conclusion
+## Conclusion
 
 That was a heavy read, wasn’t it?
 

@@ -5,7 +5,7 @@ categories: [N-Day Research]
 tags: [Windows]
 ---
 
-# Introduction
+## Introduction
 
 In this post I will walk through the root cause analysis of a vulnerability in a Windows minifilter driver. Along the way, I will also cover the background needed to understand what minifilter drivers are, how the Windows Cloud Files stack works, and how I reached the vulnerable code path from user mode. Without further introduction, let's begin with the analysis.
 
@@ -28,9 +28,9 @@ Microsoft published the following details:
 
 Before jumping into the patch diff, let's build the context we need.
 
-# Understanding the Target
+## Understanding the Target
 
-## Windows Driver Types
+### Windows Driver Types
 
 Not every Windows driver does the same job or operates at the same level. From an architectural point of view, drivers can be grouped into three broad categories:
 
@@ -42,7 +42,7 @@ Not every Windows driver does the same job or operates at the same level. From a
 
 Drivers can be built using different models, including WDM, KMDF, and UMDF. File system minifilters use the minifilter model, which is managed by the Windows Filter Manager.
 
-## What Is a Minifilter Driver?
+### What Is a Minifilter Driver?
 
 A minifilter driver is a file system filter driver model centrally managed by the Windows **Filter Manager** (`fltmgr.sys`).
 
@@ -56,7 +56,7 @@ They act as intermediaries between applications and the file system. Because the
 - **Advanced file management:** Backup tools, compression software, and transparent encryption products use minifilters to transform data before it reaches disk or before it is returned to user mode.
 - **Cloud storage integration:** Drivers such as `cldflt.sys` sit between a cloud sync engine and the local file system. They make features such as file hydration transparent to the user.
 
-## Windows Cloud Files Mini Filter Driver
+### Windows Cloud Files Mini Filter Driver
 
 Our target, `cldflt.sys`, is a minifilter driver responsible for cloud-related file operations such as file access, storage optimization, and synchronization.
 
@@ -79,7 +79,7 @@ The most interesting part of this driver is its storage optimization logic. Clou
 
 To implement this cleanly, the driver relies on **reparse points**. A reparse point contains driver-defined data and a reparse tag identifying the type of data stored there. Cloud placeholders use tags such as `IO_REPARSE_TAG_CLOUD`. When an application opens one of these files, the minifilter intercepts the operation, reads the reparse point, and coordinates hydration with the sync engine.
 
-# Initial Patch Diff
+## Initial Patch Diff
 
 With enough background in place, we can start looking for the bug.
 
@@ -106,7 +106,7 @@ For the diffing workflow I used BinDiff. To generate the disassembly databases, 
 
 After analyzing both binaries in Ghidra with Microsoft's public symbols, I exported the BinExport files and loaded them into BinDiff.
 
-## Windows 11 24H2/25H2
+### Windows 11 24H2/25H2
 
 Changed functions:
 
@@ -120,7 +120,7 @@ One thing that stands out in the added functions list is the presence of several
 
 Seeing several feature-flag-related functions strongly suggests that this patch is cumulative and contains more changes than the vulnerability I am hunting.
 
-## Windows 10 1809
+### Windows 10 1809
 
 Changed functions:
 
@@ -199,7 +199,7 @@ For now, this is enough to identify `HsmiGrantLockRequest` as the vulnerable fun
 
 As mentioned earlier, the same Windows update also patched other vulnerabilities in this component, such as `CVE-2025-62221`. That explains why several other functions contain substantial changes. The heap-based buffer overflow, however, is in `HsmiGrantLockRequest`.
 
-# Reaching the Vulnerable Function
+## Reaching the Vulnerable Function
 
 Now that the vulnerable function is identified, we need to understand how to reach it.
 
@@ -212,7 +212,7 @@ Strictly speaking, `HsmFltPreFILE_SYSTEM_CONTROL` is not just a normal function.
 
 Before following the path to the bug, a little bit more about minifilters.
 
-## DriverEntry and Minifilter Registration
+### DriverEntry and Minifilter Registration
 
 As we have seen in previous posts, every Windows driver has an entry point named `DriverEntry`, which runs when the driver is loaded:
 
@@ -290,13 +290,13 @@ typedef struct _FLT_OPERATION_REGISTRATION {
 
 The structure identifies the major function, such as `IRP_MJ_CREATE`, `IRP_MJ_READ`, or `IRP_MJ_WRITE`, and stores the corresponding pre-operation and post-operation callbacks.
 
-## Callbacks 
+### Callbacks
 
 Minifilter callbacks can be thought of as a modern, structured form of file-system hooking. They allow a driver to register routines that execute automatically when specific file system events occur. A minifilter does not need to register callbacks symmetrically: it can register a post-operation callback without a pre-operation callback, or the other way around.
 
 There are two main callback types in a minifilter I/O flow.
 
-### Pre-operation callbacks
+#### Pre-operation callbacks
 
 `HsmFltPreFILE_SYSTEM_CONTROL` (the one we identified as the main entry point to the vulnerable function) is a pre-operation callback. These routines run before the I/O operation completes and decide what should happen to the request.
 
@@ -306,7 +306,7 @@ A pre-operation callback can return values such as:
 - `FLT_PREOP_SUCCESS_WITH_CALLBACK`: The operation continues down the stack, and Filter Manager will call this minifilter's post-operation callback when the I/O completes.
 - `FLT_PREOP_PENDING`: The operation remains pending until the minifilter calls `FltCompletePendedPreOperation`.
 
-### Post-operation callbacks
+#### Post-operation callbacks
 
 Post-operation callbacks run after lower drivers in the stack finish processing the operation. They are called in reverse altitude order, from the lowest-altitude driver to the highest-altitude driver.
 
@@ -317,7 +317,7 @@ Common return values include:
 
 One important detail is that post-operation callbacks can run in an arbitrary thread context at `IRQL <= DISPATCH_LEVEL`. Data used at this level must live in nonpaged memory, because touching pageable memory at elevated IRQL can crash the system.
 
-## HsmDriverEntry
+### HsmDriverEntry
 
 `HsmDriverEntry` is a large function, so I will only show the relevant parts.
 
@@ -355,7 +355,7 @@ To interact with this callback from user mode, we need a handle to a file system
 
 Now that we understand how the driver registers itself and which callback gives us a path toward the vulnerability, let's inspect `HsmFltPreFILE_SYSTEM_CONTROL`.
 
-## HsmFltPreFILE_SYSTEM_CONTROL
+### HsmFltPreFILE_SYSTEM_CONTROL
 
 Minifilter pre-operation callbacks use this signature:
 
@@ -452,11 +452,11 @@ typedef union _FLT_PARAMETERS {
 
 Even inside `FileSystemControl`, the layout depends on the transfer method encoded in the FSCTL. We will use that later.
 
-### Function Overview
+#### Function Overview
 
 `HsmFltPreFILE_SYSTEM_CONTROL` performs four important steps.
 
-### 1. Initialization and pass-through mode
+#### 1. Initialization and pass-through mode
 
 First, the function validates `Data`. If it is valid, it calls `FltGetRequestorProcess(Data)` to identify the user-mode process that originated the request.
 
@@ -466,7 +466,7 @@ Then it calls `HsmOsIsPassThroughModeEnabled`. If the driver is configured to ig
 
 ![Pass-through branch](/assets/img/blogs/2026-05-09-n-day-research-understanding-a-heap-buffer-overflow-in-the-cloud-file-system-minifilter/image-25.png)
 
-### 2. Stream handle context recovery
+#### 2. Stream handle context recovery
 
 If the driver should inspect the request, it tries to retrieve the file's stream handle context with `FltGetStreamHandleContext`.
 
@@ -482,11 +482,11 @@ I will refer to these as the special FSCTLs.
 
 ![Special FSCTL handling](/assets/img/blogs/2026-05-09-n-day-research-understanding-a-heap-buffer-overflow-in-the-cloud-file-system-minifilter/image-26.png)
 
-### 3. Tracing
+#### 3. Tracing
 
 The driver calls `HsmpTracePreCallbackEnter` to record that it has started processing this IRP through WPP tracing.
 
-### 4. FSCTL dispatch
+#### 4. FSCTL dispatch
 
 The function extracts the control code with logic equivalent to:
 
@@ -526,7 +526,7 @@ The function number `0xEF` does not appear to be publicly defined in `ntifs.h`. 
 
 ![HsmFltProcessHSMControl](/assets/img/blogs/2026-05-09-n-day-research-understanding-a-heap-buffer-overflow-in-the-cloud-file-system-minifilter/image-28.png)
 
-## HsmFltProcessHSMControl
+### HsmFltProcessHSMControl
 
 The arguments passed to `HsmFltProcessHSMControl` are:
 
@@ -562,7 +562,7 @@ After this validation, the switch/case starts. To reach the next interesting fun
 
 Before continuing the static analysis, I wanted to build an initial PoC and confirm in the debugger that I could reach this part of the code. For that, I needed to discover the value expected in the first four bytes of `HSM_CONTROL_STRUCT`, which we pass through `InputSystemBuffer` from user mode.
 
-## Initial PoC
+### Initial PoC
 
 If our PoC simply opens a handle to an arbitrary file and sends the FSCTL, it will not work.
 
@@ -574,7 +574,7 @@ To bypass those gates and force the kernel to route our buffer into the interest
 
 The PoC needs four steps.
 
-### 1. Register the Sync Root
+#### 1. Register the Sync Root
 
 First, create a physical directory, for example `C:\Users\Public\SYNC_ROOT_TEST`, and register it with `CfRegisterSyncRoot`.
 
@@ -582,7 +582,7 @@ This tells the operating system that everything inside that directory is managed
 
 Once the directory is registered, Filter Manager will attach the expected cloud context to files created inside it. When `cldflt.sys` calls `FltGetStreamHandleContext`, it will see a valid context and continue execution.
 
-### 2. Connect the Process to the Filter
+#### 2. Connect the Process to the Filter
 
 Registration is not enough. We also need to call `CfConnectSyncRoot`.
 
@@ -590,7 +590,7 @@ This opens a communication channel between our user-mode process and the kernel 
 
 Without this connection, the driver would treat us as an ordinary process, enable pass-through mode, and forward the request to disk without processing our internal HSM command.
 
-### 3. Open a Valid Handle to the Target File
+#### 3. Open a Valid Handle to the Target File
 
 Now the environment is ready. The directory is controlled by the minifilter and our process is connected as the provider.
 
@@ -598,7 +598,7 @@ The next step is to create a physical target file, `target.txt`, inside the Sync
 
 Because the file is created inside the monitored directory, it inherits the cloud context we need.
 
-### 4. Reconstruct the HSM Structure and Send the FSCTL
+#### 4. Reconstruct the HSM Structure and Send the FSCTL
 
 With a valid handle, we prepare the input buffer and call `DeviceIoControl` with the special FSCTL discovered earlier: `0x903bc`.
 
@@ -752,7 +752,7 @@ After updating the PoC with this value, we can reach the functions we care about
 
 Let's return to Ghidra.
 
-## HsmFltProcessLockProperties
+### HsmFltProcessLockProperties
 
 Before reaching the vulnerable function, the driver passes our request through `HsmiOpPrepareOperation`.
 
@@ -830,7 +830,7 @@ Because we use a shared lock (`Flags = 0`), there is no initial conflict in `Hsm
 
 ![Call into HsmiGrantLockRequest](/assets/img/blogs/2026-05-09-n-day-research-understanding-a-heap-buffer-overflow-in-the-cloud-file-system-minifilter/Pasted%20image%2020260509124212.png)
 
-## Root Cause: HsmiGrantLockRequest
+### Root Cause: HsmiGrantLockRequest
 
 The purpose of `HsmiGrantLockRequest` is simple: **add our request to the list of active owners for a property**.
 
@@ -932,7 +932,7 @@ So we have written an 8-byte pointer fully outside the bounds of the Paged Pool 
 
 This out-of-bounds write corrupts the metadata of the adjacent pool chunk, specifically the neighboring `_POOL_HEADER`, which later crashes the system when the corrupted block is touched or freed.
 
-## Final PoC
+### Final PoC
 
 The final PoC differs from the initial one in three important ways:
 
@@ -1220,7 +1220,7 @@ This corrupts pool metadata and crashes the system.
 
 ![Crash after pool corruption](/assets/img/blogs/2026-05-09-n-day-research-understanding-a-heap-buffer-overflow-in-the-cloud-file-system-minifilter/Pasted%20image%2020260509145529.png)
 
-# Exploitability Notes
+## Exploitability Notes
 
 At this point we understand the root cause well enough to start thinking about a full LPE exploit. I do not want this post to become too long, so I will leave the actual exploit as an exercise for the reader. Still, it is worth summarizing the primitive and the constraints that would matter during exploitation.
 
@@ -1237,7 +1237,7 @@ Moreover, the `memcpy` behavior makes the corruption worse as we add handles. Wi
 
 This matters because the first OOB write lands at offset `0x20` from the usable buffer. In the observed layout, the chunk is `0x30` bytes total: `0x10` bytes of pool header plus `0x20` bytes of data. So the fifth write hits the next chunk's pool header, not a clean victim field. To reach past that header and touch the next allocation's body, we need at least seven handles, but by then the fifth and sixth requests have already corrupted intermediate chunks. Since `0x20` usable allocations are very common, there are many possible neighbors, but also a lot of allocator noise and many chances to bugcheck before the corrupted state becomes useful.
 
-# Bibliography and Conclusion
+## Bibliography and Conclusion
 
 This wraps up the root cause analysis of `CVE-2025-62454`. We started from a patch diff, narrowed the interesting changes down to `HsmiGrantLockRequest`, reconstructed the path needed to reach it from user mode, and ended with a PoC that triggers the out-of-bounds write in the Paged Pool.
 

@@ -4,10 +4,10 @@ date: 2026-06-29
 categories: [Exploit Development]
 tags: [Windows]
 ---
-# Introduction
+## Introduction
 In this blog I am going to explain several objects and exploitation techniques that are pretty well known when exploiting the Windows kernel paged pool. For the bug itself I will use one from the also very well known HackSysExtremeVulnerableDriver project, specifically a heap overflow in paged pool. We will turn that bug into a linear OOB read and write through WNF objects, then into an arbitrary read and write primitive through I/O Rings. This exploit is written for Windows 11 25H2, so we will also use ALPC objects to get the infoleak we need for privilege escalation. I will show two variants for that final step: the classic token stealing route and a parent spoofing route with winlogon.exe as parent.
 
-# The bug
+## The bug
 As I already mentioned, I am not going to use a real CVE as the base bug. I am going to use a simple HEVD bug. I chose it this way because I want this blog to focus on the methodology, the objects and the exploitation techniques for a modern Windows EoP, not on reverse engineering a real bug. If that is the part you are interested in, you can take a look at this [post](https://rotcee.github.io/posts/n-day-research-understanding-a-heap-buffer-overflow-in-the-cloud-file-system-minifilter/). Still, the techniques explained here are portable to any target that satisfies a few constraints, so they can be used (and in fact are used) to exploit real vulnerabilities in the wild.
 
 With that out of the way, let us look at the bug. If we check the source code of the project (this time I am not doing RE because I already did that while [exploiting another bug](https://rotcee.github.io/posts/HEVD-1-Kernel-Buffer-Overflow-w7-sp1-x86/) and the RE complexity here is minimal) we can see the following fragment in `Driver/HEVD/Windows/BufferOverflowPagedPoolSession.c`.
@@ -76,7 +76,7 @@ The code explains itself: `TriggerBufferOverflowPagedPoolSession` is reached by 
 
 You might be thinking, "wait, did Rotce not say we were going to work in the paged pool? The code says `PagedPoolSession`". Fair point. `PagedPoolSession` is not exactly the same thing, since it was session specific and not global across the whole system. However, Microsoft marks this `POOL_TYPE` as deprecated in his docs, and this pool type does not even exist in `POOL_FLAGS`, the model used by the modern `ExAllocatePool2` and `ExAllocatePool3` APIs. In the modern Windows build I tested, a call using this old pool type ends up behaving like a normal paged pool allocation.
 
-# The plan
+## The plan
 
 Our overflow happens in the kernel paged pool, memory that can be paged out to disk (unlike `NonPagedPool`). In this memory region, data is split into chunks of a certain size. Think of it like bricks placed next to each other. In our case the chunks are 504 bytes plus a bit more for fixed allocator headers, which we will inspect later. Since we are going to write past the end of that block, we will overwrite whatever sits in the next block, whether it is free or whether some other kernel component of the system has allocated something there.
 
@@ -124,7 +124,7 @@ That is a very simplified explanation of heap grooming, but it is enough for now
 
 The next question is obvious: which object do we want to corrupt? This is one of the hard parts of pool exploitation. In principle we need an object that lands in the same size class as the vulnerable allocation, that we can spray from usermode, and that gives us something useful, such as a better primitive or an ASLR bypass. Finding these objects usually requires reverse engineering and a solid understanding of many Windows components. Luckily, several useful objects have already been researched and are widely known.
 
-# WNF OOB read and write
+## WNF OOB read and write
 
 Starting with Windows 8, Microsoft quietly introduced Windows Notification Facility, usually called WNF. It is an undocumented publish and subscribe notification engine used by modern apps and system components to react to global state changes, such as battery level or network connectivity, in an asynchronous and efficient way. Unlike classic IPC mechanisms such as ALPC or pipes, WNF lets a publisher update state inside a kernel managed structure and move on, while the kernel takes care of notifying subscribed consumers.
 
@@ -708,7 +708,7 @@ Nice, we have gone from an overflow that only gave us an OOB write into the next
 
 So, what now? The memory is in a perfect position. We still have a freed chunk after the corrupted `WNF_STATE_DATA`, and we can place a new object there. My choice is a pretty famous one, popularized by Yarden Shafir. Does it ring a bell?
 
-# The First Spray: Obtaining an I/O Ring arbitrary read/write
+## The First Spray: Obtaining an I/O Ring arbitrary read/write
 
 Starting with the release of Windows 11, Microsoft introduced a completely new subsystem into the core of the operating system called **I/O Ring**. This component was designed with a goal focused purely on performance: optimizing input/output operations, mainly file reads and writes. Inspired by Linux `io_uring`, its job is to let high demand applications queue hundreds of file requests in memory and make a single system call so the kernel can process all of them in one batch, getting rid of the historical slowness servers suffered when doing thousands of individual requests.
 
@@ -967,7 +967,7 @@ HRESULT BuildIoRingReadFile(
 
 Yes, the function is called `ReadFile` and we are going to use it to trigger an arbitrary write. I am not kidding. This function tells the kernel: _"**Read** the data inside the pipe (`fileRef`) and **write it** into the destination buffer (`bufferRef`)"_. Since our `Index 0` points to a kernel address, the operating system will read our payload from the pipe and stamp it directly over the memory we point to.
 
-### Using the arbitrary write primitive
+### Using the arbitrary read primitive
 
 To extract and leak secret information from kernel space into our program, we call **`BuildIoRingWriteFile`**:
 
@@ -1420,7 +1420,7 @@ Header safe and sound!
 
 And with this, we finally have the powerful arbitrary read/write we were talking about earlier. We managed to go from a heap overflow to our very powerful primitive for writing wherever we want. Wherever we want... yes, wherever, but where?
 
-# Where do we read/write?
+### Where do we read/write?
 
 Since we have arbitrary read/write thanks to I/O Ring, the simplest strategy to raise our privileges to SYSTEM is to perform a data only attack. This kind of attack is characterized by the fact that we are not going to execute code in the kernel, no shellcode. Instead, we simply modify data structures. In our case, `_EPROCESS`, which is the kernel structure that defines a process. In it, we can modify certain fields to elevate our privileges and/or spawn a shell as SYSTEM. Later we will see two techniques to do this. However, before modifying it, the first thing we need to do is locate it in memory.
 
@@ -1517,7 +1517,7 @@ A theoretically viable option would be to find an alternative object that contai
 
 In this blog we will use a technique that is well known today to leak our `_EPROCESS`, using another very well known object for kernel pool exploitation.
 
-# The Second Spray: Leaking EPROCESS with ALPC
+## The Second Spray: Leaking EPROCESS with ALPC
 
 Starting with Windows Vista, Microsoft completely rewrote the old LPC, Local Procedure Call, interprocess communication component and replaced it with **ALPC, Advanced Local Procedure Call**. This internal and heavily undocumented mechanism was designed with one purpose only: maximizing performance and speed when transferring messages locally between user processes and system services, such as `lsass.exe` or `csrss.exe`. Unlike sockets or traditional pipes, ALPC optimizes kernel resources by allowing three execution methods depending on message size: direct register passing for tiny messages, pool backed messages for medium sizes, and shared memory sections for large volumes of data. Since almost any native interaction in Windows, from starting a service to querying telemetry, indirectly invokes ALPC, this component became the circulatory heart of the operating system's communications.
 
@@ -1847,7 +1847,7 @@ As we can see, `Handles` points to the start of our ALPC handle array.
 
 We already have our arbitrary read/write through I/O Ring and the address of our `_EPROCESS`. Popping SYSTEM shell is getting closer.
 
-# Privilege escalation technique 1: Parent Spoofing with Winlogon
+## Privilege escalation technique 1: Parent Spoofing with Winlogon
 
 The first technique I am going to explain is the well known parent spoofing technique. Conceptually, the technique is very simple: we are going to create a process, in our case using the `cmd.exe` image, while telling the operating system that its creator, its parent, is another process that is not ours. That is the spoofing part. We want the process we mark as parent to have maximum permissions, meaning it runs as SYSTEM, because then the child will inherit those permissions. Since we are creating a shell, this gives it to us as SYSTEM.
 
@@ -2143,7 +2143,7 @@ static bool EnableOurTokenPrivileges()
 
 And this is where EoP route using ParentSpoofing ends.
 
-# Privilege escalation technique 2: Token Stealing
+## Privilege escalation technique 2: Token Stealing
 
 This technique also has to do with the token of our `_EPROCESS`, but it is conceptually different. In Parent Spoofing we modified the privileges of our own token to gain capabilities. Here, what we are going to do is replace our token with the token of another process, in this case `System`, PID 4. I already explained this technique in more depth in another [blog](https://rotcee.github.io/posts/HEVD-1-Kernel-Buffer-Overflow-w7-sp1-x86/), although there it was done through shellcode instead of arbitrary read/write. Conceptually it is the same, so this part will be brief. We will do the following:
 
@@ -2312,7 +2312,7 @@ SYSTEM shell acquired!
 
 And with that the EoP route using TokenStealing ends.
 
-# Cleanup
+## Cleanup
 
 We already have our shell as SYSTEM, but we cannot leave things like this with all the mess we caused along the way. Right now we have two `WNF_STATE_DATA` objects whose `_HEAP_VS_CHUNK_HEADER` and `_POOL_HEADER` are completely overwritten with `0xEE`, plus the first entry of the `_IORING_OBJECT.RegBuffers` array pointing to our fake structure in usermode. If we do not leave this in a minimally decent state, the kernel will bugcheck.
 
@@ -2496,7 +2496,7 @@ WNF_STATE_DATA          // body
 
 Since the WNF objects were sprayed with the same size, neighboring chunks in the same page are separated by `0x220` bytes. Starting from the corrupted `WNF_STATE_DATA`, we search backward and forward inside the same page until we find a healthy WNF chunk, checking the tag, and we copy the `0x20` bytes of headers so we have them as a template and can modify them.
 
-### Restoring `_HEAP_VS_CHUNK_HEADER`
+#### Restoring `_HEAP_VS_CHUNK_HEADER`
 
 The `_HEAP_VS_CHUNK_HEADER` is `0x10` bytes:
 
@@ -2531,7 +2531,7 @@ restoredQword1 = (templateQword1 & ~0xFF) | ((restoredQword0 & 0xFF) ^ templateK
 
 In other words, we copy all bytes from the healthy chunk except the last one, which we recalculate with the key and our previously decoded first qword.
 
-### Restoring `_POOL_HEADER`
+#### Restoring `_POOL_HEADER`
 
 The `_POOL_HEADER` is also `0x10` bytes.
 
@@ -2584,7 +2584,7 @@ victimEncodedProcessBilled = currentEprocess ^ quotaCookie ^ victimPoolHeaderAdd
 We need to do something so that the first entry we corrupted in the `RegBuffers` array does not make us bugcheck. For this, we need to do at least one of these things, or both: set `_IORING_OBJECT.RegBuffersCount` to 0 and the `RegBuffers` array pointer to `NULL`, so I/O Ring understands that it has no buffers and does not touch that part, avoiding the crash, or simply use WNF OOB write again to modify the first array entry back to its original value. Both options are valid, so I will use the second one for simplicity.
 
 After this cleanup, which is not that much, we can close the program without Windows scolding us with a BSOD. Note that we did not restore the corrupted data in our `WNF_STATE_DATA` objects that gave us OOB read/write. This is not necessary because it does not cause a crash, but it could have been done with the I/O Ring read/write.
-# Final chain
+## Final chain
 
 With this, we have the full exploitation chain complete, although there are a few minor details I did not mention earlier, so I will do it now.
 
@@ -2596,7 +2596,7 @@ With this, we have the full exploitation chain complete, although there are a fe
 The full chain would look like this:
 
 
-#### FIRST SPRAY ROUND (I/O Ring)
+### FIRST SPRAY ROUND (I/O Ring)
 ```
 Stage00_PreCreateIoRingObjects
 Stage01_PreCreateIoRingPrimitivePipes
@@ -2609,7 +2609,7 @@ Stage07_SprayIoRingIopMcBuffers
 Stage08_LeakAndCorruptIoRingIopMcBufferEntry
 Stage09_ResolveCorruptedIoring
 ```
-#### SECOND SPRAY ROUND (ALPC)
+### SECOND SPRAY ROUND (ALPC)
 ```
 Stage10_CreateAllWnfNamesSecondRound
 Stage11_UpdateAllWnfSecondRound
@@ -2618,20 +2618,20 @@ Stage13_TriggerOverflowSecondRound
 Stage14_SprayAlpcHandleTables
 Stage15_LeakKalpcReserveToLeakEprocess
 ```
-#### ONE OF THESE 2 EOP ROUTES
-##### EOP (ParentSpoofing edition)
+### ONE OF THESE 2 EOP ROUTES
+#### EOP (ParentSpoofing edition)
 ```
 ParentSpoofing00_DiscoverAllNeededEprocess
 ParentSpoofing01_EnableOurTokenPrivileges
 ParentSpoofing02_SpawnSystemShellWinlogonParent
 ```
-##### EOP (Token Stealing edition)
+#### EOP (Token Stealing edition)
 ```
 TokenStealing00_DiscoverAllNeededEprocess
 TokenStealing01_StealSystemToken
 TokenStealing02_SpawnSystemShell
 ```
-#### CLEANUP
+### CLEANUP
 ```
 Cleanup00_ResolveCorruptedWnf
 Cleanup01_RestoreCorruptedWnfChunkHeaders
@@ -2735,7 +2735,7 @@ Starting repair cleanup...
 
 Enjoy the shell ;)
 ```
-# Bibliography and Conclusion
+## Bibliography and Conclusion
 
 And that brings this post on exploitation techniques to an end. It’s great that researchers discover these techniques and objects and share them with the community, breaking down and explaining how to exploit them. This has been my own small contribution to that community; while blogs and papers about these techniques already exist, I’ve tried to explain them in the most pragmatic way possible. In the future, I might decide to write about the PagedPool sibling, the NonPagedPool, and the use of pipes to exploit it, which are very interesting and versatile objects for exploitation.
 

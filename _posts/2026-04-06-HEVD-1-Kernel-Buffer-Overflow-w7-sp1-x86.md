@@ -6,7 +6,7 @@ tags: [Windows]
 
 ---
 
-# Introduction
+## Introduction
 
 This post is part of an idea I have been wanting to explore for a while: building the kind of HEVD material I wish I had when I started with Windows kernel exploitation.
 
@@ -16,7 +16,7 @@ The target reader is someone who already knows how to reverse, debug, and write 
 
 In this first post we will exploit a classic kernel-mode stack buffer overflow on Windows 7 SP1 x86. This target is intentionally friendly, and that is a feature, not a bug. It lets us focus on the fundamentals before modern mitigations start punching us in the face.
 
-# Reverse Engineering the Driver Entrypoint
+## Reverse Engineering the Driver Entrypoint
 I am going to start from the point where the environment is already ready: Windows 7 SP1 x86 VM, kernel debugging configured, symbols working, and HEVD loaded. I will not cover that setup here because other people have already done it well. If you need a walkthrough for that part, Connor McGarr's post [Exploit Development: Windows Kernel Exploitation - Debugging Environment and Stack Overflow](https://connormcgarr.github.io/Kernel-Exploitation-1/) has a dedicated debugging environment setup section and is a great place to bootstrap the lab.
 
 So from here on, I assume the driver is loaded and we can spend our time on the interesting bit: understanding how user mode reaches HEVD, how the driver routes requests internally, and how that eventually turns into a kernel stack overflow we can exploit.
@@ -203,7 +203,7 @@ That is all we really need from `DriverEntry` for now. It does a few additional 
 3. It registers the dispatch routines in `MajorFunction`.
 4. It creates the symbolic link that lets user-mode code reach the driver.
 
-# Reverse Engineering the IOCTL Handler
+## Reverse Engineering the IOCTL Handler
 
 Now we can focus on `IrpDeviceIoCtlHandler`, the routine stored in `MajorFunction[IRP_MJ_DEVICE_CONTROL]`. Every time a user-mode program calls `DeviceIoControl` on the HEVD handle, execution will eventually reach this handler. Its job is simple: inspect the request, recover the parameters associated with that request, and dispatch execution to the appropriate internal routine.
 
@@ -270,7 +270,7 @@ This detail matters because the `IoControlCode` is the selector we control from 
 
 At this point the handler is no longer mysterious. It is effectively a router: user mode sends an IOCTL, the driver reads the control code from the current stack location, and the `switch` sends execution to the corresponding handler.
 
-# Triggering the Buffer Overflow Path
+## Triggering the Buffer Overflow Path
 
 For this first post we are going after the classic "Hello World" of Windows kernel exploitation: HEVD's stack-based buffer overflow on Windows 7 SP1 x86. The branch we care about is `HEVD!BufferOverflowStackIoctlHandler`, so the first practical question is: which IOCTL reaches it?
 
@@ -370,7 +370,7 @@ The full runtime path looks like this:
       [ memcpy(KernelBuffer, UserBuffer, Size) ]
 ```
 
-# Exploiting the vulnerability
+## Exploiting the vulnerability
 
 I will write the exploit in C. Some people prefer Python for quick HEVD PoCs, and that is perfectly fine, but for kernel work I prefer staying close to the native Windows APIs from the beginning. That is mostly personal preference, not dogma.
 
@@ -491,7 +491,7 @@ Repeating the same process confirms exactly that:
 
 At this point the vulnerability is no longer theoretical. We have demonstrated a controlled overwrite of `EIP`, which means we have crossed the line from "there is a bug" to "we can steer execution."
 
-#### Injecting Shellcode
+### Injecting Shellcode
 
 At this point we already control `EIP`, so the next step is to decide what we want to do with that control.
 
@@ -508,7 +508,7 @@ The payload we are going to use is a classic `token stealing` shellcode. The ide
 
 To make that sentence mean something concrete, we need to understand the kernel structures the shellcode walks through.
 
-#### The Exploitation Path
+### The Exploitation Path
 
 At a high level, the final exploit looks like this:
 
@@ -611,7 +611,7 @@ Compared with the previous PoC, there are only two meaningful changes:
 
 Also note the input length change. Earlier, when the cyclic pattern lived in a string literal, using `strlen` made sense. Here `buffer` is a real stack array, so `sizeof(buffer)` is the correct choice. This is one of those tiny details that can waste an annoying amount of time if you miss it (Trust me, I know what I'm talking about :)
 
-#### What Token Stealing Actually Means
+### What Token Stealing Actually Means
 
 In Windows, a process does not "have privileges" in some abstract way. The security context is represented by an access token. That token tells the kernel who the process is, which groups it belongs to, and which privileges it holds.
 
@@ -626,7 +626,7 @@ After that, as far as the kernel is concerned, our process is effectively runnin
 
 That is why this technique is so common in Windows kernel exploitation. You do not need to invent a new privileged context from scratch. You just borrow one that already exists.
 
-#### The Structures We Need
+### The Structures We Need
 
 The shellcode walks through several kernel structures in a very deliberate order:
 
@@ -638,7 +638,7 @@ For the full layouts, [Vergilius Project](https://www.vergiliusproject.com/) is 
 
 Let us break that down.
 
-##### KPCR
+#### KPCR
 
 The `KPCR` (_Kernel Processor Control Region_) is a per-CPU structure that stores processor-local kernel state. On 32-bit Windows, the `fs` segment register gives kernel code a convenient way to reach it.
 
@@ -673,7 +673,7 @@ So from the processor-local `KPCR`, we immediately reach the currently running t
 
 ![KPCR current thread path](/assets/img/blogs/2026-04-06-HEVD-1-Kernel-Buffer-Overflow-w7-sp1-x86/image-3.png)
 
-##### ETHREAD and KTHREAD
+#### ETHREAD and KTHREAD
 
 At this point it is worth clarifying a detail that often confuses people the first time they see token stealing shellcode: the current thread is usually discussed as an `ETHREAD`, but the scheduler-facing kernel thread state lives in an embedded `KTHREAD`.
 
@@ -727,7 +727,7 @@ From the kernel's point of view, this is the thread's owning process object. The
 
 ![KTHREAD APC state process pointer](/assets/img/blogs/2026-04-06-HEVD-1-Kernel-Buffer-Overflow-w7-sp1-x86/image-5.png)
 
-#### EPROCESS
+### EPROCESS
 
 `EPROCESS` is the kernel structure that represents a process. This is the kernel's own bookkeeping object for a process: identity, links to other processes, security context, address space data, handle tables, and a lot more. In other words, if user mode sees "a process", `EPROCESS` is a big part of what the kernel actually sees.
 
@@ -753,7 +753,7 @@ In our shellcode, once we land on the current process `EPROCESS`, we save it in 
 
 ![EPROCESS key fields](/assets/img/blogs/2026-04-06-HEVD-1-Kernel-Buffer-Overflow-w7-sp1-x86/image-6.png)
 
-#### A Quick Detour: How Kernel Linked Lists Work
+### A Quick Detour: How Kernel Linked Lists Work
 
 The `ActiveProcessLinks` field is not a pointer to "the next process" in some magical process-only list. It is a standard Windows kernel doubly linked list entry, usually represented as a `nt!_LIST_ENTRY`.
 
@@ -815,7 +815,7 @@ So we do:
 This is a general kernel pattern, not a one-off HEVD trick. Once you understand it here, a lot of other Windows kernel code becomes much easier to read.
 
 
-#### Walking to SYSTEM
+### Walking to SYSTEM
 
 Now the shellcode's control flow should make sense:
 
@@ -833,7 +833,7 @@ We start from our current process, walk the active process list one entry at a t
 
 Once that comparison succeeds, `eax` points to `SYSTEM`'s `EPROCESS`.
 
-#### Stealing the Token
+### Stealing the Token
 
 With both processes in hand, the rest is brutally simple:
 
@@ -863,7 +863,7 @@ And finally our process token after the overwrite:
 
 ![Our process token after overwrite](/assets/img/blogs/2026-04-06-HEVD-1-Kernel-Buffer-Overflow-w7-sp1-x86/image-2.png)
 
-#### The Shellcode
+### The Shellcode
 
 Here is the shellcode used in the exploit:
 
@@ -942,7 +942,7 @@ After running the exploit, the driver survives the return path and we land exact
 
 ![SYSTEM shell after exploitation](/assets/img/blogs/2026-04-06-HEVD-1-Kernel-Buffer-Overflow-w7-sp1-x86/system-shell.png)
 
-#### Is not that easy
+### Is not that easy
 
 This exploit path works because the target is very forgiving. That is the whole point of starting here.
 

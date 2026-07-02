@@ -9,7 +9,7 @@ This will be a blog series where we'll do a deep dive into the Mercusys MB115-4G
 > **Disclaimer:** This research is conducted for educational purposes only on devices I personally own. Always ensure you have proper authorization before performing security testing on any device. The techniques described here should only be used on your own equipment or with explicit permission from the device owner.
 {: .prompt-warning }
 
-### 0. Some prior reconnaissance
+## 0. Some prior reconnaissance
 
 *Note: I'm starting the sections at 0 because, well, old habits from programming die hard!*
 
@@ -73,7 +73,7 @@ After this initial recon, I decided to wait until I had the router to analyze th
 PD: At the moment of writing this post I've discovered that if you change the language of the firmware download page to English, there are 2 extra firmwares available, both newer than the ones that appeared in the Spanish section. (Pretty odd, huh?)
 
 
-### 1. Hardware Analysis
+## 1. Hardware Analysis
 
 In this section we'll identify the main components of the router and their functionality.
 
@@ -122,7 +122,7 @@ A self-contained cellular communication module soldered to the main board. It ma
 
 **5. Main EMI Shield (SoC & RAM)**: An Electromagnetic Interference (EMI) shield. It is a metal cage that covers the most sensitive components. It houses the SoC (System on Chip) and the RAM.
 
-### 2. Connecting via UART to access the system
+## 2. Connecting via UART to access the system
 
 Now that we have identified the various components in the PCB, it's time to come up with a plan to gain a first foothold in the system. As we have discovered a UART interface that seems to be active (because of the test with the voltmeter and the previous firmware reconnaissance) we'll go with that.
 
@@ -164,7 +164,7 @@ Let's try with the credentials we saw in the **passwd.bak** file:
 
 The credentials are valid!! Now we have a shell as **root**.
 
-### 3. Dumping the firmware
+## 3. Dumping the firmware
 
 Now that we have complete access to the system, I want to see if I can extract all the firmware without having to use an EEPROM reader. I'm too lazy for that.
 
@@ -198,7 +198,7 @@ echo "DONE!"
 
 And with that, we have just dumped all the flash memory of the router. (I would recommend comparing the MD5 hashes of the dumped memory to ensure no information loss).
 
-### Recap and next steps
+## Recap and next steps
 
 This is the end of this first part of the blog series. Here's what we've accomplished:
 
